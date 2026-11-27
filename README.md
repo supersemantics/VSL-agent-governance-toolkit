@@ -20,6 +20,39 @@ before the tool ran.
 - Complete mediation. Agent Hooks says so itself: a code path the framework never routes through an
   interception point is not seen, so the ledger speaks only for the calls that were.
 
+## How this adapter differs from the other VSL adapters
+
+Every other VSL adapter connects VSL to an orchestration framework: a LangGraph node, LangChain or
+Agent Framework middleware, a ROS 2 publisher. vsl-agt connects VSL to another governance layer.
+AGT already sits between the agent and its tools; vsl-agt puts VSL's gates in the same place, so
+both decide on the same call.
+
+| | The other VSL adapters | vsl-agt |
+|---|---|---|
+| Plugs into | the framework's own hook | AGT's interception points, next to AGT's own policy |
+| Who decides | VSL's gate alone | AGT's verdict and VSL's together: any deny stops the call |
+| Ledger writes | the gate blocks; your code records the decision and the action (vsl-ros2's `vsl_guard` node records its own) | gate decisions, the fallback for each denial, the Terminal State and the tool's run are recorded for you |
+| Terminal State | the gate raises; your code records it and holds the agent | the interceptor holds the agent, the hold survives a restart, and only a recorded human release ends it |
+| Audit trail | the VSL ledger | the VSL ledger, each entry linked to AGT's record of the same call |
+| A tool run with no check before it | not detected by the adapter | a tracked tool's unchecked run reads `AFTER_ACTION` |
+
+## VSL adapters
+
+Each adapter passes vsl-core's conformance suite and builds gates with no assurance claim. vsl-core
+itself: [Python](https://github.com/supersemantics/VSL-Core) (`super-semantics-vsl`),
+[TypeScript](https://github.com/supersemantics/VSL-Corejs) (`@supersemantics/vsl-core`),
+[.NET](https://github.com/supersemantics/VSL-Core.NET) (`SuperSemantics.Vsl`).
+
+| Framework | Package | Where the gate runs | What a denial does |
+|---|---|---|---|
+| Microsoft Agent Governance Toolkit | `vsl-agt` (this repo) | AGT's `pre_tool_call` interception point, or its `ToolCallInterceptor` chain | Agent Hooks raises `InterceptionBlocked`; AGT's chain returns `allowed=False` |
+| [LangGraph](https://github.com/supersemantics/VSL-Langgraph) | `vsl-langgraph` | `gated_node`: before the node body | the node is skipped; `route_on_denial` routes the graph |
+| [LangGraph.js](https://github.com/supersemantics/VSL-Langgraphjs) | `@supersemantics/vsl-langgraph` | `gatedNode`: before the node body | the node is skipped; `routeOnDenial` routes the graph |
+| [LangChain](https://github.com/supersemantics/VSL-LangChain) | `vsl-langchain` | `VSLToolMiddleware`, `create_agent`'s `wrap_tool_call` | the tool never runs; the model gets an error `ToolMessage` |
+| [Microsoft Agent Framework (Python)](https://github.com/supersemantics/VSL-Microsoft-agent-framework) | `vsl-maf` | function middleware, before the tool | the run aborts with `VSLGateDenied` |
+| [Microsoft Agent Framework (.NET)](https://github.com/supersemantics/VSL-Microsoft-agent-framework.NET) | `SuperSemantics.Vsl.AgentFramework` | `UseVslGate` / `UseVslGates`, before the tool | the run aborts with `VslGateDeniedException` |
+| [ROS 2](https://github.com/supersemantics/VSL-ROS2) | `vsl-ros2` | before a command is published, a service handled or an action goal accepted | the message isn't sent, or the goal is rejected; `vsl_guard` proxies Nav2 |
+
 ## What VSL adds to AGT
 
 Each row is a limit AGT documents about itself, and what vsl-agt does about it.
@@ -28,7 +61,7 @@ Each row is a limit AGT documents about itself, and what vsl-agt does about it.
 |---|---|
 | The audit trail "records what the agent attempted", not whether the action ran ([LIMITATIONS](https://github.com/microsoft/agent-governance-toolkit/blob/main/docs/LIMITATIONS.md) §2) | `post_tool_call` records that the tool ran (`write_action`); `ledger.enforcement(decision_id)` computes, from record order, whether every gate decided first |
 | The decision fields are outside the audit entry hash in v1.0 ([AUDIT-COMPLIANCE-1.0](https://github.com/microsoft/agent-governance-toolkit/blob/main/docs/specs/AUDIT-COMPLIANCE-1.0.md) §4.3.1) | every VSL gate decision is a hash-chained ledger entry, decision included |
-| No correlation across a sequence of allowed actions (LIMITATIONS §1) | vsl-core `Cluster` Invariants and handovers, written to the same ledger |
+| No correlation across a sequence of allowed actions (LIMITATIONS §1) | a gate can be any Invariant, including a vsl-core `Cluster` Invariant over state the agents share; hand-offs between agents are recorded with `write_handover` in the same ledger |
 | A recorded kill is not proof of termination (LIMITATIONS §13) | an Invariant can name a `TerminalState`: every gated call is denied until a named human releases it, recorded as a `HUMAN_AUTHORISED_TRANSITION` |
 | Policy verdicts are allow, deny or transform | a `PreNode` gates on a measured ratio (Gamma) against a threshold, recorded with its value |
 
@@ -149,12 +182,38 @@ AGT's protocol is synchronous and runs before the tool only:
 `agent_os` is imported only when a call is intercepted. In AGT 5.0 importing it warns
 (`agent-os-kernel is deprecated`), even from `agent-governance-toolkit-core`.
 
-## Microsoft Agent Framework
+## Other orchestration frameworks
 
-AGT's Agent Framework integration is middleware (`GovernancePolicyMiddleware` and others). VSL
-already has Agent Framework middleware: [vsl-maf](https://github.com/supersemantics/VSL-Microsoft-agent-framework)
-in Python and [VSL-Microsoft-agent-framework.NET](https://github.com/supersemantics/VSL-Microsoft-agent-framework.NET).
-Put both in the agent's middleware list.
+There are three routes, depending on what the framework offers.
+
+**1. A VSL adapter exists for it.** Use it (table above). If the agent also runs under AGT, put
+both side by side. In Microsoft Agent Framework, for example, AGT's `GovernancePolicyMiddleware`
+and vsl-maf's `VSLFunctionMiddleware` go in the same middleware list.
+
+**2. Through AGT.** Which vsl-agt class you use depends on how AGT reaches the framework:
+
+| How AGT reaches the framework | Use |
+|---|---|
+| A host that emits Agent Hooks (`agent-hooks-sdk`, or your own loop) | `VSLInterceptor`, registered at `vsl.points` |
+| An AGT adapter that calls `ToolCallInterceptor`s, or a `CompositeInterceptor` in your own loop | `VSLToolCallInterceptor`, with each gated tool wrapped by `track()` |
+| An AGT adapter with no third-party seam | route 1, or put the framework's tool calls through a `CompositeInterceptor` yourself |
+
+In `agent-governance-toolkit-core` 5.0.0, the CrewAI adapter is the one that calls
+`ToolCallInterceptor`s. The other Python adapters run AGT's policy through their own pre- and
+post-execute checks, which take no third-party interceptor. That is AGT's code today, not a VSL
+limit; as more of AGT's adapters move onto Agent Hooks, `VSLInterceptor` reaches them unchanged.
+
+**3. No adapter at all.** Compile a gate with `AGTAdapter()` (or vsl-core's
+`PlainPythonReferenceAdapter`) and call it immediately before the action. It raises on a denial.
+Record the decision and the action yourself:
+
+```python
+gate = AGTAdapter().compile_invariant(refund_cap)
+await gate(args)                                   # raises InvariantViolation on a denial
+ledger.write_gate_decision(identity_key="refund-agent", primitive_name="refund-cap", allowed=True, decision_id=d)
+issue_refund(**args)
+ledger.write_action(identity_key="refund-agent", action_name="issue_refund", decision_id=d)
+```
 
 ## What a gate reports
 
