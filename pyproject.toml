@@ -25,10 +25,10 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/supersemantics/agent-governance-toolkit"
-Repository = "https://github.com/supersemantics/agent-governance-toolkit"
-Changelog = "https://github.com/supersemantics/agent-governance-toolkit/blob/HEAD/CHANGELOG.md"
-Issues = "https://github.com/supersemantics/agent-governance-toolkit/issues"
+Homepage = "https://github.com/supersemantics/VSL-agent-governance-toolkit"
+Repository = "https://github.com/supersemantics/VSL-agent-governance-toolkit"
+Changelog = "https://github.com/supersemantics/VSL-agent-governance-toolkit/blob/HEAD/CHANGELOG.md"
+Issues = "https://github.com/supersemantics/VSL-agent-governance-toolkit/issues"
 
 [project.optional-dependencies]
 # AGT itself, for VSLToolCallInterceptor (agent_os.integrations). Tested with 5.0.0,
