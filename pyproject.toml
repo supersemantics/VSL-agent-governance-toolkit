@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vsl-agt"
+version = "0.1.0"
+description = "VSL gates and the VERBA ledger inside Microsoft's Agent Governance Toolkit: an Agent Hooks interceptor and an AGT ToolCallInterceptor, with recorded actions and computed enforcement."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+dependencies = [
+    # vsl-core, published on PyPI as super-semantics-vsl (imported as vsl_core).
+    "super-semantics-vsl>=0.4,<0.5",
+    # The Agent Hooks contract AGT's framework adapters emit. 0.1 is a beta:
+    # pinned to the exact release this package is tested against.
+    "agent-hooks-sdk==0.1.0b3",
+]
+keywords = ["governance", "ai-safety", "guardrails", "agent-governance-toolkit", "agent-hooks", "vsl", "verba"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Development Status :: 3 - Alpha",
+]
+
+[project.optional-dependencies]
+# AGT itself, for VSLToolCallInterceptor (agent_os.integrations). Tested with 5.0.0.
+agt = ["agent-governance-toolkit-core>=5,<6"]
+dev = ["pytest>=7", "pytest-asyncio>=0.23"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
