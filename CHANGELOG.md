@@ -2,7 +2,7 @@
 
 What changed in each release, and why. Newest first.
 
-## 0.1.0 (unreleased): first version
+## 0.1.0 (2026-11-27, tag `v0.1.0`): first version, published on PyPI
 
 **Before:** VSL gates could run in Microsoft's Agent Governance Toolkit only by hand, outside its
 interception chain, and nothing tied AGT's audit trail to the VSL ledger.
