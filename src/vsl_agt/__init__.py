@@ -10,7 +10,7 @@ order whether the gates decided first.
 import vsl_core as _vsl_core
 
 from .adapter import AGTAdapter
-from .agt_native import TIMEOUT_REASON, VSLToolCallInterceptor
+from .agt_native import TIMEOUT_REASON, UNMEDIATED_PREFIX, VSLToolCallInterceptor
 from .interceptor import (
     EVIDENCE_ARTEFACT,
     INTERCEPTION_POINTS,
@@ -37,6 +37,7 @@ __all__ = [
     "VSLInterceptor",
     "VSLToolCallInterceptor",
     "TIMEOUT_REASON",
+    "UNMEDIATED_PREFIX",
     "INTERCEPTION_POINTS",
     "REASON_PREFIX",
     "EVIDENCE_ARTEFACT",

@@ -14,6 +14,10 @@ What it does at the two tool-call points:
   returns allow or deny. A denied call is closed in the ledger (PRE_NODE
   and VERIFICATION) so audit() passes; an Invariant naming a TerminalState
   enters it (TERMINAL), and every gated call is denied until release().
+  The Terminal State is read back from the ledger when the interceptor is
+  created, so with a persistent store (JsonlLedgerStore) it survives a
+  restart: a TERMINAL entry with no HUMAN_AUTHORISED_TRANSITION caused by
+  it still holds the agent.
 - post_tool_call: records that the tool ran with VerbaLedger.write_action.
   VerbaLedger.enforcement(decision_id) then shows, from record order,
   whether every gate decided before the tool ran.
@@ -141,6 +145,33 @@ class VSLInterceptor:
         self._candidate_input = candidate_input or (lambda ctx: ctx.get("target"))
         self._terminal: TerminalState | None = None
         self._terminal_entry: LedgerEntry | None = None
+        self._restore_terminal()
+
+    def _restore_terminal(self) -> None:
+        """Re-enter a Terminal State the ledger shows was never released."""
+        open_entry: LedgerEntry | None = None
+        for entry in self.ledger.store.entries_for_identity(self.identity_key):
+            if entry.entry_type == LedgerEntryType.TERMINAL and "terminal_state" in entry.payload:
+                open_entry = entry
+            elif (
+                entry.entry_type == LedgerEntryType.HUMAN_AUTHORISED_TRANSITION
+                and open_entry is not None
+                and entry.caused_by == open_entry.entry_id
+            ):
+                open_entry = None
+        if open_entry is None:
+            return
+        name = str(open_entry.payload["terminal_state"])
+        declared = {
+            gate.on_violation.name: gate.on_violation
+            for tool_gates in self._gates.values()
+            for gate in tool_gates
+            if isinstance(gate, Invariant) and gate.on_violation is not None
+        }
+        self._terminal = declared.get(name) or TerminalState(
+            name=name, description="Restored from the ledger; no gate declares it any more."
+        )
+        self._terminal_entry = open_entry
 
     @property
     def points(self) -> tuple[InterceptionPoint, ...]:

@@ -236,3 +236,52 @@ def test_gates_take_no_assurance_basis_and_warn_about_nothing(ledger):
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         VSLInterceptor({"issue_refund": refund_gates()}, ledger=ledger, identity_key="a")
+
+
+# ---- the Terminal State survives a restart ------------------------------------------------------
+
+from vsl_core.ledger import JsonlLedgerStore  # noqa: E402
+
+SUPERVISOR = GovernanceAuthority(name="Refunds Supervisor", escalation_contact="supervisor@example.com")
+RELEASE_EVIDENCE = Evidence(root_cause_analysis="a $9000 refund was requested", specification_update_proposal="cap at intake")
+
+
+async def test_the_terminal_state_survives_a_restart_and_a_release_does_too(tmp_path):
+    path = tmp_path / "decisions.jsonl"
+    before = interceptor(VerbaLedger(JsonlLedgerStore(path)), on_violation=REFUND_ESCALATED)
+    with pytest.raises(InterceptionBlocked):
+        await Host(before).call("issue_refund", {"amount": 9000.0})
+
+    after_restart = interceptor(VerbaLedger(JsonlLedgerStore(path)), on_violation=REFUND_ESCALATED)
+    assert after_restart.terminal_state is REFUND_ESCALATED  # the declared state, not a copy
+    host = Host(after_restart)
+    with pytest.raises(InterceptionBlocked) as paused:
+        await host.call("issue_refund", {"amount": 50.0})
+    assert paused.value.result.verdict.reason == REASON_PREFIX + "terminal_state:refund-escalated"
+
+    after_restart.release(authority=SUPERVISOR, authorised_by="j.smith", evidence=RELEASE_EVIDENCE)
+    released = interceptor(VerbaLedger(JsonlLedgerStore(path)), on_violation=REFUND_ESCALATED)
+    assert released.terminal_state is None
+    _, decision_id = await Host(released).call("issue_refund", {"amount": 50.0})
+    assert released.ledger.enforcement(decision_id) == Enforcement.BEFORE_ACTION
+    assert released.ledger.audit().all_passed and released.ledger.verify_integrity()
+
+
+async def test_a_terminal_state_no_gate_declares_any_more_still_holds(tmp_path):
+    path = tmp_path / "decisions.jsonl"
+    with pytest.raises(InterceptionBlocked):
+        await Host(interceptor(VerbaLedger(JsonlLedgerStore(path)), on_violation=REFUND_ESCALATED)).call(
+            "issue_refund", {"amount": 9000.0})
+    reconfigured = interceptor(VerbaLedger(JsonlLedgerStore(path)))  # no on_violation now
+    assert reconfigured.terminal_state is not None and reconfigured.terminal_state.name == "refund-escalated"
+    with pytest.raises(InterceptionBlocked):
+        await Host(reconfigured).call("issue_refund", {"amount": 50.0})
+
+
+async def test_another_agents_terminal_state_does_not_hold_this_one(tmp_path):
+    path = tmp_path / "decisions.jsonl"
+    with pytest.raises(InterceptionBlocked):
+        await Host(interceptor(VerbaLedger(JsonlLedgerStore(path)), on_violation=REFUND_ESCALATED)).call(
+            "issue_refund", {"amount": 9000.0})
+    other = VSLInterceptor({"issue_refund": refund_gates(REFUND_ESCALATED)}, ledger=VerbaLedger(JsonlLedgerStore(path)), identity_key="other-agent")
+    assert other.terminal_state is None

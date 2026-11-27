@@ -91,7 +91,11 @@ What it records, under the decision id `<session id>/<tool call id>`:
 - each gate's decision (`write_gate_decision`; a PreNode's with its Gamma and threshold);
 - for a denial, the fallback and its verification, so `ledger.audit()` passes;
 - for an Invariant naming a `TerminalState`, a `TERMINAL` entry. Every gated call is then denied
-  (`vsl:terminal_state:<name>`) until `vsl.release(authority=..., authorised_by=..., evidence=...)`;
+  (`vsl:terminal_state:<name>`) until `vsl.release(authority=..., authorised_by=..., evidence=...)`
+  records a `HUMAN_AUTHORISED_TRANSITION`. The state is read back from the ledger when a
+  `VSLInterceptor` is created, so with a `JsonlLedgerStore` it survives a restart: the agent comes
+  back still held, and only a recorded release frees it. Another agent's Terminal State (a different
+  `identity_key`) does not hold this one;
 - after the tool, the action (`write_action`, with `is_error`).
 
 **Matching the two audit trails.** Every gate decision and action entry carries an `agent_hooks`
@@ -115,20 +119,31 @@ from agent_os.integrations.base import CompositeInterceptor, GovernancePolicy, P
 from vsl_agt import VSLToolCallInterceptor
 
 vsl_native = VSLToolCallInterceptor(vsl)   # the VSLInterceptor above
+issue_refund = vsl_native.track(issue_refund)   # records each run after it returns or raises
 chain = CompositeInterceptor([PolicyInterceptor(GovernancePolicy(allowed_tools=["issue_refund"])), vsl_native])
 
 request = ToolCallRequest(tool_name="issue_refund", arguments={"amount": 120.0}, call_id=call_id, agent_id="refund-agent")
 if chain.intercept(request).allowed:
     issue_refund(amount=120.0)
-    vsl_native.record_action(request)
+
+ledger.enforcement(call_id)                    # Enforcement.BEFORE_ACTION
 ```
 
 AGT's protocol is synchronous and runs before the tool only:
 
 - the VSL gates run on a private event loop thread; a gate that doesn't decide within `timeout_sec`
   (default 5 s) is a deny, `vsl:gate_timeout`;
-- there is no after-tool hook, so call `record_action(request)` after the tool runs. Without it,
-  `enforcement()` reads `NOT_OBSERVED` for an allowed call;
+- there is no after-tool hook, so `track(fn)` wraps each gated tool (sync or async). An allowed
+  intercept leaves its decision id pending; the tracked tool's next run records under it, with
+  `is_error` if it raised. A run with no allowed intercept before it (the gates were never asked, or
+  they denied and the caller ran it anyway) is recorded under a new `unmediated/...` decision id,
+  which `enforcement()` reads as `AFTER_ACTION`. Give the tracked function to the framework in
+  place of the original: for AGT's CrewAI adapter, track the tool's function before the adapter
+  wraps it;
+- the pending id belongs to the thread or asyncio task: intercept and run the tool in the same one,
+  as `CompositeInterceptor` callers and the CrewAI adapter do;
+- without `track`, call `record_action(request)` after the tool runs; without either, `enforcement()`
+  reads `NOT_OBSERVED` for an allowed call. Use one or the other for a tool, not both;
 - the result's `audit_entry` carries `vsl_decision_id` and the ledger `vsl_evidence`.
 
 `agent_os` is imported only when a call is intercepted. In AGT 5.0 importing it warns
@@ -152,15 +167,17 @@ monitor or rule. Whether a gate held before its action is computed from the ledg
 Alpha. Tested against the real packages, not mocks:
 
 - `agent-hooks-sdk` 0.1.0b3: allowed and denied calls through `InterceptionEmitter`, the Terminal
-  State and its release, a failing gate, ledger entries matched to the host's records, AGT-style
+  State, its release, and both surviving a restart on a `JsonlLedgerStore`, a failing gate, ledger entries matched to the host's records, AGT-style
   interceptors before VSL in the chain, and a host that runs a denied call anyway (the ledger reads
   `AFTER_ACTION`).
 - `agent-governance-toolkit-core` 5.0.0: `VSLToolCallInterceptor` in a `CompositeInterceptor` with
-  AGT's `PolicyInterceptor`, requests without a call id, and the timeout.
+  AGT's `PolicyInterceptor`, requests without a call id (CrewAI's shape), the timeout, and tracked
+  tools: sync and async, errors, one run per intercept, and runs with no intercept or after a deny
+  (`AFTER_ACTION`).
 - `run_conformance_suite(AGTAdapter())` is empty.
 
-Known gaps: the Terminal State is held in memory, so it does not survive a restart; Agent Hooks is a
-0.1 beta and AGT is in preview, so both APIs may change.
+Known gaps: a tracked tool run in a different thread or task from its intercept is recorded as
+unmediated; Agent Hooks is a 0.1 beta and AGT is in preview, so both APIs may change.
 
 ## License
 

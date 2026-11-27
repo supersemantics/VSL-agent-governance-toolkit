@@ -11,9 +11,12 @@ interception chain, and nothing tied AGT's audit trail to the VSL ledger.
 - `VSLInterceptor`: an Agent Hooks (`agent-hooks/0.1`) interceptor. At `pre_tool_call` it runs the
   tool's PreNodes and Invariants, records each decision, and allows or denies; at `post_tool_call`
   it records that the tool ran. Denials are closed in the ledger, an Invariant can enter a Terminal
-  State released only by a named human, and every entry names the host record it belongs to.
+  State released only by a named human, and every entry names the host record it belongs to. The
+  Terminal State is read back from the ledger at start, so it survives a restart.
 - `VSLToolCallInterceptor`: AGT's own `ToolCallInterceptor` protocol, for `CompositeInterceptor`
-  chains and the adapters that call interceptors.
+  chains and the adapters that call interceptors. `track(fn)` records each run of a gated tool
+  automatically, pairing it with the allowed intercept before it; a run with none is recorded as
+  unmediated, which `enforcement()` reads as `AFTER_ACTION`.
 - `AGTAdapter`: vsl-core's `VSLAdapter`, conformance-suite clean.
 
 Requires `super-semantics-vsl>=0.4,<0.5` and `agent-hooks-sdk==0.1.0b3`; the `agt` extra adds
@@ -23,5 +26,5 @@ Requires `super-semantics-vsl>=0.4,<0.5` and `agent-hooks-sdk==0.1.0b3`; the `ag
 human-released Terminal State, and a hash-chained record of whether each gate decided before its
 action ran.
 
-**Tests:** 24 pass against agent-hooks-sdk 0.1.0b3 and agent-governance-toolkit-core 5.0.0 (17,
+**Tests:** 36 pass against agent-hooks-sdk 0.1.0b3 and agent-governance-toolkit-core 5.0.0 (20,
 and the AGT-native tests skipped, without AGT installed).
