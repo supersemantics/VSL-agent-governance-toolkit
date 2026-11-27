@@ -31,8 +31,9 @@ Changelog = "https://github.com/supersemantics/agent-governance-toolkit/blob/HEA
 Issues = "https://github.com/supersemantics/agent-governance-toolkit/issues"
 
 [project.optional-dependencies]
-# AGT itself, for VSLToolCallInterceptor (agent_os.integrations). Tested with 5.0.0.
-agt = ["agent-governance-toolkit-core>=5,<6"]
+# AGT itself, for VSLToolCallInterceptor (agent_os.integrations). Tested with 5.0.0,
+# which needs Python 3.11 or later.
+agt = ['agent-governance-toolkit-core>=5,<6; python_version >= "3.11"']
 dev = ["pytest>=7", "pytest-asyncio>=0.23"]
 
 [tool.setuptools.packages.find]

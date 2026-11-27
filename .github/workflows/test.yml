@@ -18,6 +18,10 @@ jobs:
       matrix:
         python-version: ["3.10", "3.12", "3.13"]
         extras: ["dev", "dev,agt"]
+        exclude:
+          # AGT core 5.0 needs Python 3.11 or later.
+          - python-version: "3.10"
+            extras: "dev,agt"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

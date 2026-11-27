@@ -74,6 +74,9 @@ pip install vsl-agt            # with Agent Hooks
 pip install "vsl-agt[agt]"     # also AGT core, for VSLToolCallInterceptor
 ```
 
+vsl-agt runs on Python 3.10 or later. AGT core 5.0, and so `VSLToolCallInterceptor`, needs 3.11 or
+later.
+
 `agent-hooks-sdk` is a beta (0.1.0b3) and is pinned exactly. vsl-core comes from PyPI as
 `super-semantics-vsl` (0.4.x).
 
