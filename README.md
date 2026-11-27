@@ -16,6 +16,8 @@ before the tool ran.
 - `AGTAdapter`: vsl-core's `VSLAdapter`, passing `run_conformance_suite` with no failures.
 
 **Is not:**
+- A Microsoft project, or Microsoft's AGT repository. This is Super Semantics' VSL adapter for AGT;
+  AGT itself is at [microsoft/agent-governance-toolkit](https://github.com/microsoft/agent-governance-toolkit).
 - A replacement for AGT's policy engine, identity, trust scoring or sandboxing. It runs next to them.
 - Complete mediation. Agent Hooks says so itself: a code path the framework never routes through an
   interception point is not seen, so the ledger speaks only for the calls that were.
